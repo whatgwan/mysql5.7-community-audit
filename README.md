@@ -1,4 +1,4 @@
-# mysql-community-audit
+# mysql5.7-community-audit
 
 **Lightweight audit-log plugin for MySQL 5.7 Community Edition** — logins, failed
 logins, `GRANT`/`REVOKE`, and DDL — written to a file, for the case where
