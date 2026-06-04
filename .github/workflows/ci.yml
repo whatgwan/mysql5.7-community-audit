@@ -59,19 +59,49 @@ jobs:
           login_audit_file = /var/log/mysql/login_audit.log
           CNF
 
-          docker run -d --name mysql57 \
+          # An authenticated query — not `mysqladmin ping`, which exits 0 even on
+          # ACCESS DENIED (it only proves the server is alive, not that auth works).
+          wait_ready() {
+            local c=$1
+            for i in $(seq 1 90); do
+              if docker exec "$c" mysql -uroot -prootpw -e 'SELECT 1' >/dev/null 2>&1; then return 0; fi
+              sleep 2
+            done
+            docker exec "$c" mysql -uroot -prootpw -e 'SELECT 1'   # surface the real error, then fail
+          }
+
+          # ---------------------------------------------------------------------
+          # Phase 1 — first-boot initialization WITHOUT the plugin.
+          # The image's entrypoint only sets MYSQL_ROOT_PASSWORD while it
+          # initializes an empty datadir. The audit plugin's hooks fire on the
+          # bootstrap's own CREATE USER / ALTER USER statements, which derails
+          # the root-password setup. So we initialize on a clean server first and
+          # persist the datadir in a named volume.
+          # ---------------------------------------------------------------------
+          echo "Phase 1: initialize datadir (no plugin)..."
+          docker run -d --name mysql57-init \
             -e MYSQL_ROOT_PASSWORD=rootpw \
+            -v mysql57data:/var/lib/mysql \
+            mysql:5.7.44
+          wait_ready mysql57-init
+          docker stop mysql57-init        # leave it (not rm) so its log is available on failure
+
+          # ---------------------------------------------------------------------
+          # Phase 2 — restart against the initialized datadir WITH the plugin.
+          # Datadir is already populated, so init is skipped and the root password
+          # is already set; this start exercises the real deployment path:
+          # plugin loaded at startup via plugin-load-add, init runs, audit happens.
+          # (MYSQL_ROOT_PASSWORD is intentionally omitted — it's ignored once the
+          # datadir exists.)
+          # ---------------------------------------------------------------------
+          echo "Phase 2: start with plugin loaded at boot via plugin-load-add..."
+          docker run -d --name mysql57 \
+            -v mysql57data:/var/lib/mysql \
             -v "$PWD/login_audit.so:/usr/lib64/mysql/plugin/login_audit.so:ro" \
             -v "$PWD/audit.cnf:/etc/mysql/conf.d/audit.cnf:ro" \
             -v "$PWD/audit:/var/log/mysql" \
             mysql:5.7.44
-
-          echo "Waiting for MySQL to be ready..."
-          for i in $(seq 1 90); do
-            if docker exec mysql57 mysqladmin -uroot -prootpw ping >/dev/null 2>&1; then break; fi
-            sleep 2
-          done
-          docker exec mysql57 mysqladmin -uroot -prootpw ping
+          wait_ready mysql57
 
           echo "Plugin must be ACTIVE..."
           docker exec mysql57 mysql -uroot -prootpw -N -e \
@@ -93,6 +123,8 @@ jobs:
           docker exec mysql57 grep -q 'cmd=drop_user'                /var/log/mysql/login_audit.log
           echo "PASS: plugin loaded, ACTIVE, and captured logins (success+fail) and DCL."
 
-      - name: Show MySQL log on failure
+      - name: Show MySQL logs on failure
         if: failure()
-        run: docker logs mysql57 || true
+        run: |
+          echo "===== init container (phase 1) ====="; docker logs mysql57-init 2>&1 || true
+          echo "===== audit container (phase 2) ====="; docker logs mysql57      2>&1 || true
