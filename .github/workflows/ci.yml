@@ -10,7 +10,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: oraclelinux:7
+    # NOTE: do NOT put `container: oraclelinux:7` here. GitHub runs JS actions
+    # (checkout, upload-artifact) with its own Node 20 binary, which needs
+    # glibc >= 2.28 — el7 only has 2.17, so checkout dies before anything runs.
+    # Instead we keep the actions on the host and run only the build in el7
+    # via `docker run`, preserving the ABI-correct build environment.
     env:
       # Match this to the server you target. mysql-community-devel headers must
       # be the same version as the mysqld you'll load the plugin into.
@@ -18,14 +22,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain + matching MySQL dev headers
+      - name: Build inside el7 (make runs the ABI self-check)
         run: |
-          yum -y install gcc-c++ make
-          curl -fsSL -o /tmp/devel.rpm "$MYSQL_DEVEL_RPM"
-          rpm -i --nodeps /tmp/devel.rpm     # headers only -> /usr/include/mysql
-
-      - name: Build (make runs the ABI self-check)
-        run: make
+          docker run --rm \
+            -v "$PWD:/src" -w /src \
+            -e MYSQL_DEVEL_RPM="$MYSQL_DEVEL_RPM" \
+            oraclelinux:7 bash -euo pipefail -c '
+              yum -y install gcc-c++ make
+              curl -fsSL -o /tmp/devel.rpm "$MYSQL_DEVEL_RPM"
+              rpm -i --nodeps /tmp/devel.rpm     # headers only -> /usr/include/mysql
+              make
+            '
 
       - uses: actions/upload-artifact@v4
         with:
