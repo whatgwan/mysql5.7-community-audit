@@ -4,7 +4,7 @@
 logins, `GRANT`/`REVOKE`, and DDL - written to a file, for the case where
 MariaDB's `server_audit` won't load and MySQL Enterprise Audit isn't an option.
 
-Built and tested on **MySQL 5.7.44** (the final 5.7 release). ~150 lines of C,
+Built and tested on **MySQL 5.7.44** (the final 5.7.44 container release Oct 2023). ~150 lines of C,
 compiled from source against *your* server's headers, and **fail-safe** (a fault
 in the plugin disables auditing, it never takes the database down).
 
