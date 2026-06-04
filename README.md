@@ -125,7 +125,7 @@ server hands it no event — it trips a circuit breaker and goes **dormant**: it
 stops auditing, logs one line to the error log, and never risks the server.
 Inputs from the server are null- and length-checked; `init` never blocks startup.
 
-Caveat (honest): in-process C cannot be made immune to its *own* memory bugs — a
+in-process C cannot be made immune to its *own* memory bugs — a
 SIGSEGV can't be safely caught inside `mysqld`. The defense is that the code is
 tiny, uses only the public event structs, and guards every field. Read it before
 you run it.
