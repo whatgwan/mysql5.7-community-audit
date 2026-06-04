@@ -33,18 +33,18 @@ PLUGIN_DIR   ?= $(shell mysql -N -e 'SELECT @@plugin_dir' 2>/dev/null)
 all: verify
 
 $(SO): $(SRC)
-        $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ $<
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ $<
 
 # A loadable MySQL plugin MUST export this symbol — fail the build if it doesn't.
 verify: $(SO)
-        @nm -D $(SO) | grep -q _mysql_plugin_interface_version_ \
-          && echo "OK: $(SO) exports the plugin ABI symbols" \
-          || { echo "ERROR: $(SO) is not a valid plugin"; exit 1; }
+	@nm -D $(SO) | grep -q _mysql_plugin_interface_version_ \
+	  && echo "OK: $(SO) exports the plugin ABI symbols" \
+	  || { echo "ERROR: $(SO) is not a valid plugin"; exit 1; }
 
 install: $(SO)
-        @test -n "$(PLUGIN_DIR)" || { echo "ERROR: set PLUGIN_DIR=/path/to/plugin_dir"; exit 1; }
-        install -m 0644 $(SO) "$(PLUGIN_DIR)/$(SO)"
-        @echo "Installed -> $(PLUGIN_DIR)/$(SO)"
+	@test -n "$(PLUGIN_DIR)" || { echo "ERROR: set PLUGIN_DIR=/path/to/plugin_dir"; exit 1; }
+	install -m 0644 $(SO) "$(PLUGIN_DIR)/$(SO)"
+	@echo "Installed -> $(PLUGIN_DIR)/$(SO)"
 
 clean:
-        rm -f $(SO)
+	rm -f $(SO)
