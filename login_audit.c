@@ -1,4 +1,20 @@
 /*
+  Copyright (C) 2026 whatgwan
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License, version 2.0, for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, see <https://www.gnu.org/licenses/>.
+*/
+
+/*
   login_audit — minimal, DEFENSIVE MySQL 5.7 audit plugin.
 
   Captures the privileged-action trail MySQL 5.7 Community can't produce safely:
