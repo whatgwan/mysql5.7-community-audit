@@ -1,7 +1,7 @@
 # mysql5.7-community-audit
 
-**Lightweight audit-log plugin for MySQL 5.7 Community Edition** — logins, failed
-logins, `GRANT`/`REVOKE`, and DDL — written to a file, for the case where
+**Lightweight audit-log plugin for MySQL 5.7 Community Edition** - logins, failed
+logins, `GRANT`/`REVOKE`, and DDL - written to a file, for the case where
 MariaDB's `server_audit` won't load and MySQL Enterprise Audit isn't an option.
 
 Built and tested on **MySQL 5.7.44** (the final 5.7 release). ~150 lines of C,
@@ -16,12 +16,12 @@ in the plugin disables auditing, it never takes the database down).
 
 MySQL 5.7 **Community Edition has no working free audit plugin**:
 
-- **MariaDB `server_audit`** — the usual suggestion — does **not** work on Oracle
+- **MariaDB `server_audit`** - the usual suggestion - does **not** work on Oracle
   MySQL 5.7.44:
   - 10.5+ builds fail to load: `undefined symbol: psi_prlock_wrlock` (a
     MariaDB-internal symbol Oracle MySQL doesn't export).
   - 10.2–10.4 builds load, then **SIGSEGV on the first connection** inside
-    `get_db_mysql57` — [**MDEV-25498**](https://jira.mariadb.org/browse/MDEV-25498).
+    `get_db_mysql57` - [**MDEV-25498**](https://jira.mariadb.org/browse/MDEV-25498).
     They read MySQL's private `THD` at a hardcoded offset that's wrong for this
     build. *Every* MariaDB build shares that code path, so no version fixes it.
 - **MySQL Enterprise Audit** is a commercial add-on (not in Community).
@@ -29,11 +29,11 @@ MySQL 5.7 **Community Edition has no working free audit plugin**:
 Both `server_audit` failures are the same root cause: **a binary built for a
 different server**. This plugin avoids them by being compiled against **your
 exact MySQL headers** (so symbols resolve) and using only the **public audit
-event API** (`plugin_audit.h`) — it never touches `THD`, so there is no offset
+event API** (`plugin_audit.h`) - it never touches `THD`, so there is no offset
 to get wrong, and nothing to SIGSEGV.
 
 If you got here by Googling `psi_prlock_wrlock`, `get_db_mysql57`, or
-`MDEV-25498` while trying to audit MySQL Community — this is for you.
+`MDEV-25498` while trying to audit MySQL Community - this is for you.
 
 ## What it captures
 
@@ -42,7 +42,7 @@ If you got here by Googling `psi_prlock_wrlock`, `get_db_mysql57`, or
 | `CONNECTION` | successful logins, **failed logins**, `CHANGE_USER` | user, priv_user, host, ip, conn_id, status |
 | `GENERAL` | **DCL** (`GRANT`/`REVOKE`/`CREATE`·`ALTER`·`DROP`·`RENAME USER`/`SET PASSWORD`) and **DDL** (`CREATE`/`ALTER`/`DROP`/`TRUNCATE`/`RENAME` of schema objects), including attempts | command, user, host, ip, thread_id, query |
 
-Statement-level (it records that a statement ran, with who/where — not row
+Statement-level (it records that a statement ran, with who/where - not row
 values). DML/`SELECT` are intentionally **not** logged.
 
 Example output:
@@ -120,12 +120,12 @@ DROP USER 'audit_canary'@'localhost';                       -- event=STMT cmd=dr
 ## Fail-safe design
 
 The plugin runs inside `mysqld`, so it is written to **fail safe**. On any error
-it can detect — log file won't open, a write fails (e.g. disk full), or the
-server hands it no event — it trips a circuit breaker and goes **dormant**: it
+it can detect - log file won't open, a write fails (e.g. disk full), or the
+server hands it no event - it trips a circuit breaker and goes **dormant**: it
 stops auditing, logs one line to the error log, and never risks the server.
 Inputs from the server are null- and length-checked; `init` never blocks startup.
 
-in-process C cannot be made immune to its *own* memory bugs — a
+in-process C cannot be made immune to its *own* memory bugs - a
 SIGSEGV can't be safely caught inside `mysqld`. The defense is that the code is
 tiny, uses only the public event structs, and guards every field. Read it before
 you run it.
@@ -135,7 +135,7 @@ you run it.
 - File output means the plugin is **inert to replication** (no tables, no binlog,
   no GTIDs). Safe on every node.
 - **Install it on every node.** DCL/DDL is captured where the statement
-  *executes* — i.e. on the **primary**. A read-only replica logs its connections
+  *executes* - i.e. on the **primary**. A read-only replica logs its connections
   but won't show replicated DCL/DDL (no client runs it there). On failover the
   new primary must already have the plugin, or you have a gap.
 
@@ -144,20 +144,20 @@ you run it.
 - **The local file is a buffer, not the system of record.** A privileged user can
   edit or delete it. For an audit *trail*, ship it off-box in near-real-time to an
   append-only/WORM destination they can't alter, and **alert on the stream going
-  quiet** (the plugin can be `UNINSTALL`-ed or go dormant — detect the silence).
+  quiet** (the plugin can be `UNINSTALL`-ed or go dormant - detect the silence).
 - Rotate the local file with `logrotate`; size it so nothing is dropped before
   it's shipped.
-- The log contains usernames, source hosts/IPs, and DDL/DCL statement text —
+- The log contains usernames, source hosts/IPs, and DDL/DCL statement text -
   treat it as sensitive.
 - MySQL 5.7 is **end-of-life** (Oct 2023). This plugin audits it; it does not make
   it supported.
 
 ## License
 
-GPLv2 — it links the MySQL plugin headers. `my_sqlcommand.h` is included verbatim
+GPLv2 - it links the MySQL plugin headers. `my_sqlcommand.h` is included verbatim
 from the MySQL source (GPLv2).
 
 ## Contributing
 
-Issues and PRs welcome. Keep the plugin small, total, and dependency-free — the
+Issues and PRs welcome. Keep the plugin small, total, and dependency-free - the
 safety argument depends on it.
