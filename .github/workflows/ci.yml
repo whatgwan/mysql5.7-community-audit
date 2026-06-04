@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# The plugin must be ABI-compatible with the target server, so we build inside an
+# el7 container (glibc 2.17) — the same family as the mysql:5.7.x images — then
+# load the result into a real mysql:5.7.44 and prove it actually audits.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: oraclelinux:7
+    env:
+      # Match this to the server you target. mysql-community-devel headers must
+      # be the same version as the mysqld you'll load the plugin into.
+      MYSQL_DEVEL_RPM: https://repo.mysql.com/yum/mysql-5.7-community/el/7/x86_64/mysql-community-devel-5.7.44-1.el7.x86_64.rpm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain + matching MySQL dev headers
+        run: |
+          yum -y install gcc-c++ make
+          curl -fsSL -o /tmp/devel.rpm "$MYSQL_DEVEL_RPM"
+          rpm -i --nodeps /tmp/devel.rpm     # headers only -> /usr/include/mysql
+
+      - name: Build (make runs the ABI self-check)
+        run: make
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: login_audit.so
+          path: login_audit.so
+          if-no-files-found: error
+
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: login_audit.so
+
+      - name: Load into real MySQL 5.7.44 and verify it audits
+        run: |
+          set -euo pipefail
+          mkdir -p audit && chmod 0777 audit          # writable by the container's mysql uid
+
+          cat > audit.cnf <<'CNF'
+          [mysqld]
+          plugin-load-add  = login_audit=login_audit.so
+          login_audit_file = /var/log/mysql/login_audit.log
+          CNF
+
+          docker run -d --name mysql57 \
+            -e MYSQL_ROOT_PASSWORD=rootpw \
+            -v "$PWD/login_audit.so:/usr/lib64/mysql/plugin/login_audit.so:ro" \
+            -v "$PWD/audit.cnf:/etc/mysql/conf.d/audit.cnf:ro" \
+            -v "$PWD/audit:/var/log/mysql" \
+            mysql:5.7.44
+
+          echo "Waiting for MySQL to be ready..."
+          for i in $(seq 1 90); do
+            if docker exec mysql57 mysqladmin -uroot -prootpw ping >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec mysql57 mysqladmin -uroot -prootpw ping
+
+          echo "Plugin must be ACTIVE..."
+          docker exec mysql57 mysql -uroot -prootpw -N -e \
+            "SELECT PLUGIN_STATUS FROM information_schema.PLUGINS WHERE PLUGIN_NAME='login_audit'" \
+            | grep -qx ACTIVE
+
+          echo "Generate auditable events..."
+          docker exec mysql57 mysql -uroot -prootpw -e \
+            "CREATE USER canary@'%' IDENTIFIED BY 'x'; DROP USER canary@'%';"
+          docker exec mysql57 mysql -ucanary -pWRONG -e "SELECT 1" || true   # failed login
+
+          echo "----- login_audit.log -----"
+          docker exec mysql57 cat /var/log/mysql/login_audit.log
+
+          echo "Assert the trail captured them..."
+          docker exec mysql57 grep -q 'event=CONNECT status=SUCCESS' /var/log/mysql/login_audit.log
+          docker exec mysql57 grep -q 'event=CONNECT status=FAIL'    /var/log/mysql/login_audit.log
+          docker exec mysql57 grep -q 'cmd=create_user'              /var/log/mysql/login_audit.log
+          docker exec mysql57 grep -q 'cmd=drop_user'                /var/log/mysql/login_audit.log
+          echo "PASS: plugin loaded, ACTIVE, and captured logins (success+fail) and DCL."
+
+      - name: Show MySQL log on failure
+        if: failure()
+        run: docker logs mysql57 || true
